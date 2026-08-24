@@ -3,7 +3,7 @@ import { supabase } from "@/lib/supabase";
 
 export default async function Home() {
   const { data: products, error } = await supabase
-    .from("products_test")
+    .from("products")
     .select("*")
     .order("id", { ascending: true });
 
