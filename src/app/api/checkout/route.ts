@@ -19,7 +19,10 @@ export async function POST(request: Request) {
     };
 
     if (!cartItems || cartItems.length === 0) {
-      return NextResponse.json({ error: "Cart is empty." }, { status: 400 });
+      return NextResponse.json(
+        { error: "Cart is empty." },
+        { status: 400 },
+      );
     }
 
     const origin = new URL(request.url).origin;
@@ -53,8 +56,6 @@ export async function POST(request: Request) {
     return NextResponse.json({
       url: session.url,
     });
-
-    return NextResponse.redirect(session.url, 303);
   } catch (error) {
     console.error("Stripe Checkout error:", error);
 
