@@ -9,91 +9,198 @@ import {
   type ReactNode,
 } from "react";
 
-type CartItem = {
+export type CartItem = {
+  /*
+   * productId currently represents seller_listings.id.
+   */
   productId: number;
+
+  /*
+   * sellerId tells the storefront which seller owns
+   * this listing.
+   *
+   * The checkout API will still verify the real
+   * seller ID from Supabase before creating an order.
+   */
+  sellerId: number;
+
   productName: string;
   price: number;
   image: string;
-  size: string;
   quantity: number;
 };
 
 type CartContextType = {
   cartItems: CartItem[];
   cartLoaded: boolean;
+
   addToCart: (item: CartItem) => void;
-  removeFromCart: (productId: number, size: string) => void;
+
+  removeFromCart: (productId: number) => void;
+
   updateQuantity: (
     productId: number,
-    size: string,
     quantity: number,
   ) => void;
+
   clearCart: () => void;
 };
 
-const CartContext = createContext<CartContextType | undefined>(undefined);
+const CartContext = createContext<
+  CartContextType | undefined
+>(undefined);
 
-export function CartProvider({ children }: { children: ReactNode }) {
-  const [cartItems, setCartItems] = useState<CartItem[]>([]);
-  const [cartLoaded, setCartLoaded] = useState(false);
+export function CartProvider({
+  children,
+}: {
+  children: ReactNode;
+}) {
+  const [cartItems, setCartItems] = useState<
+    CartItem[]
+  >([]);
 
+  const [cartLoaded, setCartLoaded] =
+    useState(false);
+
+  /*
+   * Restore the cart from localStorage.
+   */
   useEffect(() => {
-    const savedCart = localStorage.getItem("noisebox-cart");
+    const savedCart =
+      localStorage.getItem("noisebox-cart");
 
     if (savedCart) {
-      setCartItems(JSON.parse(savedCart));
+      try {
+        const parsedCart = JSON.parse(savedCart);
+
+        if (Array.isArray(parsedCart)) {
+          /*
+           * Old Noisebox carts were created before
+           * sellerId existed.
+           *
+           * Remove those old entries instead of
+           * guessing which seller owns them.
+           */
+          const cleanedCart: CartItem[] =
+            parsedCart
+              .filter(
+                (item) =>
+                  Number.isInteger(
+                    Number(item.productId),
+                  ) &&
+                  Number.isInteger(
+                    Number(item.sellerId),
+                  ),
+              )
+              .map((item) => ({
+                productId: Number(
+                  item.productId,
+                ),
+
+                sellerId: Number(
+                  item.sellerId,
+                ),
+
+                productName:
+                  item.productName ?? "",
+
+                price: Number(item.price),
+
+                image: item.image ?? "",
+
+                quantity:
+                  Number(item.quantity) > 0
+                    ? Number(item.quantity)
+                    : 1,
+              }));
+
+          setCartItems(cleanedCart);
+        }
+      } catch {
+        localStorage.removeItem(
+          "noisebox-cart",
+        );
+      }
     }
 
     setCartLoaded(true);
   }, []);
 
+  /*
+   * Save cart changes.
+   */
   useEffect(() => {
-    if (cartLoaded) {
-      localStorage.setItem("noisebox-cart", JSON.stringify(cartItems));
+    if (!cartLoaded) {
+      return;
     }
+
+    localStorage.setItem(
+      "noisebox-cart",
+      JSON.stringify(cartItems),
+    );
   }, [cartItems, cartLoaded]);
 
   function addToCart(item: CartItem) {
     setCartItems((currentItems) => {
-      const existingItem = currentItems.find(
-        (cartItem) =>
-          cartItem.productId === item.productId &&
-          cartItem.size === item.size,
-      );
+      const existingItem =
+        currentItems.find(
+          (cartItem) =>
+            cartItem.productId ===
+            item.productId,
+        );
 
       if (existingItem) {
-        return currentItems.map((cartItem) =>
-          cartItem.productId === item.productId &&
-          cartItem.size === item.size
-            ? {
-                ...cartItem,
-                quantity: cartItem.quantity + item.quantity,
-              }
-            : cartItem,
+        return currentItems.map(
+          (cartItem) =>
+            cartItem.productId ===
+            item.productId
+              ? {
+                  ...cartItem,
+
+                  quantity:
+                    cartItem.quantity +
+                    item.quantity,
+                }
+              : cartItem,
         );
       }
 
-      return [...currentItems, item];
+      return [
+        ...currentItems,
+        {
+          ...item,
+          quantity:
+            item.quantity > 0
+              ? item.quantity
+              : 1,
+        },
+      ];
     });
   }
 
-  function removeFromCart(productId: number, size: string) {
+  function removeFromCart(
+    productId: number,
+  ) {
     setCartItems((currentItems) =>
       currentItems.filter(
         (item) =>
-          !(item.productId === productId && item.size === size),
+          item.productId !== productId,
       ),
     );
   }
 
   function updateQuantity(
     productId: number,
-    size: string,
     quantity: number,
   ) {
+    if (quantity <= 0) {
+      removeFromCart(productId);
+      return;
+    }
+
     setCartItems((currentItems) =>
       currentItems.map((item) =>
-        item.productId === productId && item.size === size
+        item.productId === productId
           ? {
               ...item,
               quantity,
@@ -105,7 +212,11 @@ export function CartProvider({ children }: { children: ReactNode }) {
 
   const clearCart = useCallback(() => {
     setCartItems([]);
-    localStorage.setItem("noisebox-cart", JSON.stringify([]));
+
+    localStorage.setItem(
+      "noisebox-cart",
+      JSON.stringify([]),
+    );
   }, []);
 
   return (
@@ -128,7 +239,9 @@ export function useCart() {
   const context = useContext(CartContext);
 
   if (!context) {
-    throw new Error("useCart must be used inside CartProvider");
+    throw new Error(
+      "useCart must be used inside CartProvider",
+    );
   }
 
   return context;

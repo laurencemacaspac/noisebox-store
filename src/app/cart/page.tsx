@@ -36,7 +36,9 @@ export default function CartPage() {
 
         {cartItems.length === 0 ? (
           <div className="mt-8">
-            <p className="text-gray-600">Your cart is empty.</p>
+            <p className="text-gray-600">
+              Your cart is empty.
+            </p>
 
             <Link
               href="/#shop"
@@ -50,44 +52,63 @@ export default function CartPage() {
             <div className="mt-10 space-y-8">
               {cartItems.map((item) => (
                 <div
-                  key={`${item.productId}-${item.size}`}
+                  key={item.productId}
                   className="flex gap-6 border-b border-gray-200 pb-8"
                 >
+                  {/* Product Image */}
                   <div className="relative h-28 w-28 shrink-0 overflow-hidden bg-gray-100">
-                    <Image
-                      src={item.image}
-                      alt={item.productName}
-                      fill
-                      className="object-cover"
-                    />
+                    {item.image ? (
+                      <Image
+                        src={item.image}
+                        alt={item.productName}
+                        fill
+                        sizes="112px"
+                        className="object-cover"
+                      />
+                    ) : (
+                      <div className="flex h-full items-center justify-center p-3 text-center">
+                        <span className="text-xs uppercase tracking-wider text-gray-400">
+                          Noisebox
+                        </span>
+                      </div>
+                    )}
                   </div>
 
+                  {/* Product Information */}
                   <div className="flex flex-1 justify-between gap-6">
                     <div>
-                      <h2 className="font-medium">{item.productName}</h2>
+                      <h2 className="font-medium">
+                        {item.productName}
+                      </h2>
 
                       <p className="mt-2 text-sm text-gray-500">
-                        Size: {item.size}
+                        ${Number(item.price).toFixed(2)} each
                       </p>
 
                       <div className="mt-4 flex items-center gap-3">
-                        <label className="text-sm text-gray-500">
+                        <label
+                          htmlFor={`quantity-${item.productId}`}
+                          className="text-sm text-gray-500"
+                        >
                           Quantity:
                         </label>
 
                         <select
+                          id={`quantity-${item.productId}`}
                           value={item.quantity}
                           onChange={(event) =>
                             updateQuantity(
                               item.productId,
-                              item.size,
                               Number(event.target.value),
                             )
                           }
-                          className="border border-gray-300 px-3 py-2"
+                          className="border border-gray-300 bg-white px-3 py-2"
                         >
                           {[1, 2, 3, 4, 5].map((number) => (
-                            <option key={number} value={number}>
+                            <option
+                              key={number}
+                              value={number}
+                            >
                               {number}
                             </option>
                           ))}
@@ -97,7 +118,7 @@ export default function CartPage() {
                       <button
                         type="button"
                         onClick={() =>
-                          removeFromCart(item.productId, item.size)
+                          removeFromCart(item.productId)
                         }
                         className="mt-4 text-sm underline hover:text-gray-500"
                       >
@@ -106,22 +127,30 @@ export default function CartPage() {
                     </div>
 
                     <p className="font-medium">
-                      ${(item.price * item.quantity).toFixed(2)}
+                      $
+                      {(
+                        item.price * item.quantity
+                      ).toFixed(2)}
                     </p>
                   </div>
                 </div>
               ))}
             </div>
 
+            {/* Cart Summary */}
             <div className="mt-10 flex justify-end">
               <div className="w-full max-w-sm">
                 <div className="flex justify-between text-lg font-medium">
                   <span>Subtotal</span>
-                  <span>${subtotal.toFixed(2)}</span>
+
+                  <span>
+                    ${subtotal.toFixed(2)}
+                  </span>
                 </div>
 
                 <p className="mt-2 text-sm text-gray-500">
-                  Shipping and taxes are calculated during checkout.
+                  Shipping and taxes are calculated during
+                  checkout.
                 </p>
 
                 <Link
