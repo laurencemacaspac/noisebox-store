@@ -1,15 +1,21 @@
-import Link from "next/link";
-import { createClient } from "@supabase/supabase-js";
+"use client";
 
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!,
-);
+import { useEffect, useState } from "react";
+import Link from "next/link";
+
+import { supabase } from "@/lib/supabase";
+
+type Seller = {
+  id: number;
+  shop_name: string;
+  shop_slug: string;
+};
 
 type Order = {
   id: number;
   status: string;
   buyer_email: string | null;
+  shipping_name: string | null;
   created_at: string;
 };
 
@@ -25,79 +31,245 @@ type OrderItem = {
   unit_price: number;
   line_total: number;
   fulfillment_status: string;
-
-  /*
-   * Supabase relationship results can be represented
-   * as either an object or an array depending on
-   * relationship inference.
-   */
   orders: Order | Order[] | null;
 };
 
-export default async function SellerOrdersPage() {
-  /*
-   * Temporary seller ID.
-   * Later this will come from the logged-in seller.
-   */
-  const sellerId = 1;
+type SellerOrdersResponse = {
+  seller?: Seller;
+  orderItems?: OrderItem[];
+  error?: string;
+};
 
-  const { data, error } = await supabaseAdmin
-    .from("order_items")
-    .select(
-      `
-      id,
-      order_id,
-      listing_id,
-      seller_id,
-      artist,
-      title,
-      format,
-      quantity,
-      unit_price,
-      line_total,
-      fulfillment_status,
+export default function SellerOrdersPage() {
+  const [seller, setSeller] =
+    useState<Seller | null>(null);
 
-      orders!order_items_order_id_fkey (
-        id,
-        status,
-        buyer_email,
-        created_at
-      )
-    `,
-    )
-    .eq("seller_id", sellerId)
-    .neq("fulfillment_status", "shipped")
-    .order("id", { ascending: false });
+  const [orderItems, setOrderItems] =
+    useState<OrderItem[]>([]);
 
-  if (error) {
-    console.error(
-      "Seller orders error:",
-      error,
+  const [loading, setLoading] =
+    useState(true);
+
+  const [error, setError] =
+    useState<string | null>(null);
+
+  const [notSignedIn, setNotSignedIn] =
+    useState(false);
+
+  const [notSeller, setNotSeller] =
+    useState(false);
+
+  useEffect(() => {
+    let mounted = true;
+
+    async function loadOrders() {
+      setLoading(true);
+      setError(null);
+      setNotSignedIn(false);
+      setNotSeller(false);
+
+      const {
+        data: { session },
+        error: sessionError,
+      } = await supabase.auth.getSession();
+
+      if (!mounted) {
+        return;
+      }
+
+      if (
+        sessionError ||
+        !session?.access_token
+      ) {
+        setSeller(null);
+        setOrderItems([]);
+        setNotSignedIn(true);
+        setLoading(false);
+        return;
+      }
+
+      try {
+        const response = await fetch(
+          "/api/seller/orders",
+          {
+            method: "GET",
+            headers: {
+              Authorization:
+                `Bearer ${session.access_token}`,
+            },
+            cache: "no-store",
+          },
+        );
+
+        const result =
+          (await response.json()) as SellerOrdersResponse;
+
+        if (!mounted) {
+          return;
+        }
+
+        if (response.status === 401) {
+          setSeller(null);
+          setOrderItems([]);
+          setNotSignedIn(true);
+          setLoading(false);
+          return;
+        }
+
+        if (response.status === 403) {
+          setSeller(null);
+          setOrderItems([]);
+          setNotSeller(true);
+          setLoading(false);
+          return;
+        }
+
+        if (!response.ok) {
+          throw new Error(
+            result.error ??
+              `Unable to load seller orders (${response.status}).`,
+          );
+        }
+
+        if (!result.seller) {
+          throw new Error(
+            "The server returned incomplete seller data.",
+          );
+        }
+
+        setSeller(result.seller);
+        setOrderItems(
+          result.orderItems ?? [],
+        );
+
+        setLoading(false);
+      } catch (loadError) {
+        console.error(
+          "Seller orders load error:",
+          loadError,
+        );
+
+        if (!mounted) {
+          return;
+        }
+
+        setError(
+          loadError instanceof Error
+            ? loadError.message
+            : "Unable to load seller orders.",
+        );
+
+        setSeller(null);
+        setOrderItems([]);
+        setLoading(false);
+      }
+    }
+
+    void loadOrders();
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange(
+      () => {
+        void loadOrders();
+      },
     );
 
+    return () => {
+      mounted = false;
+      subscription.unsubscribe();
+    };
+  }, []);
+
+  if (loading) {
     return (
       <main className="mx-auto max-w-6xl px-6 py-10">
-        <h1 className="text-3xl font-bold">
-          Orders
-        </h1>
-
-        <p className="mt-6 text-red-600">
-          Unable to load orders.
+        <p className="text-gray-500">
+          Loading seller orders...
         </p>
       </main>
     );
   }
 
-  /*
-   * Normalize Supabase's generated result to the
-   * shape used by this page.
-   */
-  const orderItems =
-    (data ?? []) as unknown as OrderItem[];
+  if (notSignedIn) {
+    return (
+      <main className="mx-auto max-w-6xl px-6 py-10">
+        <p className="text-sm font-semibold uppercase tracking-widest text-gray-500">
+          Selling
+        </p>
+
+        <h1 className="mt-3 text-3xl font-bold">
+          Seller Orders
+        </h1>
+
+        <p className="mt-4 max-w-xl text-gray-600">
+          Sign in to a seller account to view
+          orders.
+        </p>
+
+        <Link
+          href="/"
+          className="mt-7 inline-flex border border-black px-5 py-2.5 text-sm font-medium transition hover:bg-black hover:text-white"
+        >
+          Back to Shop
+        </Link>
+      </main>
+    );
+  }
+
+  if (notSeller) {
+    return (
+      <main className="mx-auto max-w-6xl px-6 py-10">
+        <p className="text-sm font-semibold uppercase tracking-widest text-gray-500">
+          Selling
+        </p>
+
+        <h1 className="mt-3 text-3xl font-bold">
+          You don&apos;t have a seller shop yet.
+        </h1>
+
+        <p className="mt-4 max-w-xl text-gray-600">
+          Open a Noisebox shop before you can
+          receive and manage seller orders.
+        </p>
+
+        <div className="mt-7 flex flex-wrap gap-3">
+          <Link
+            href="/seller"
+            className="inline-flex bg-black px-5 py-2.5 text-sm font-medium text-white transition hover:bg-gray-800"
+          >
+            Start Selling
+          </Link>
+
+          <Link
+            href="/account"
+            className="inline-flex border border-gray-300 px-5 py-2.5 text-sm font-medium transition hover:border-black"
+          >
+            Back to Account
+          </Link>
+        </div>
+      </main>
+    );
+  }
+
+  if (error || !seller) {
+    return (
+      <main className="mx-auto max-w-6xl px-6 py-10">
+        <p className="text-red-600">
+          {error ??
+            "Unable to load seller orders."}
+        </p>
+      </main>
+    );
+  }
 
   return (
     <main className="mx-auto max-w-6xl px-6 py-10">
       <div className="mb-8">
+        <p className="mb-2 text-sm font-semibold uppercase tracking-widest text-gray-500">
+          {seller.shop_name}
+        </p>
+
         <h1 className="text-3xl font-bold">
           Orders
         </h1>
@@ -130,28 +302,42 @@ export default async function SellerOrdersPage() {
       {orderItems.length === 0 ? (
         <div className="border border-gray-200 p-8">
           <p className="text-gray-600">
-            You don&apos;t have any orders to ship.
+            You don&apos;t have any orders to
+            ship.
           </p>
         </div>
       ) : (
         <div className="space-y-4">
           {orderItems.map((item) => {
-            /*
-             * Handle either relationship shape safely.
-             */
-            const order = Array.isArray(item.orders)
-              ? item.orders[0] ?? null
-              : item.orders;
+            const order =
+              Array.isArray(item.orders)
+                ? item.orders[0] ?? null
+                : item.orders;
 
-            const orderDate = order?.created_at
-              ? new Intl.DateTimeFormat("en-US", {
-                  month: "short",
-                  day: "numeric",
-                  year: "numeric",
-                }).format(
-                  new Date(order.created_at),
-                )
-              : "";
+            const orderDate =
+              order?.created_at
+                ? new Intl.DateTimeFormat(
+                    "en-US",
+                    {
+                      month: "short",
+                      day: "numeric",
+                      year: "numeric",
+                    },
+                  ).format(
+                    new Date(
+                      order.created_at,
+                    ),
+                  )
+                : "";
+
+            const statusLabel =
+              item.fulfillment_status ===
+              "needs_shipping"
+                ? "Needs Shipping"
+                : item.fulfillment_status.replaceAll(
+                    "_",
+                    " ",
+                  );
 
             return (
               <div
@@ -189,15 +375,29 @@ export default async function SellerOrdersPage() {
                         Quantity: {item.quantity}
                       </p>
 
-                      <p>
-                        Buyer:{" "}
-                        {order?.buyer_email ??
-                          "Not available"}
-                      </p>
+                      <div className="pt-2">
+                        <p>
+                          <span className="font-medium text-gray-900">
+                            Buyer:
+                          </span>{" "}
+                          {order?.shipping_name ??
+                            "Name not available"}
+                        </p>
 
-                      <p>
-                        Status:{" "}
-                        {item.fulfillment_status}
+                        <p>
+                          <span className="font-medium text-gray-900">
+                            Email:
+                          </span>{" "}
+                          {order?.buyer_email ??
+                            "Email not available"}
+                        </p>
+                      </div>
+
+                      <p className="pt-2">
+                        <span className="font-medium text-gray-900">
+                          Status:
+                        </span>{" "}
+                        {statusLabel}
                       </p>
                     </div>
                   </div>

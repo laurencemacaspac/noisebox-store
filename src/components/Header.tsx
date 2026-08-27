@@ -15,10 +15,7 @@ export default function Header() {
   const [user, setUser] = useState<User | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
 
-  const cartCount = cartItems.reduce(
-    (total, item) => total + item.quantity,
-    0,
-  );
+  const cartCount = cartItems.reduce((total, item) => total + item.quantity, 0);
 
   useEffect(() => {
     async function loadUser() {
@@ -46,7 +43,10 @@ export default function Header() {
 
   async function handleSignOut() {
     await supabase.auth.signOut();
+
     setUser(null);
+
+    window.location.href = "/";
   }
 
   return (
@@ -78,8 +78,8 @@ export default function Header() {
 
             {!authLoading && user && (
               <>
-                <Link href="/seller" className="hover:text-gray-500">
-                  Sell
+                <Link href="/account" className="hover:text-gray-500">
+                  Account
                 </Link>
 
                 <span
@@ -106,10 +106,7 @@ export default function Header() {
         </div>
       </header>
 
-      <AuthModal
-        isOpen={authOpen}
-        onClose={() => setAuthOpen(false)}
-      />
+      <AuthModal isOpen={authOpen} onClose={() => setAuthOpen(false)} />
     </>
   );
 }

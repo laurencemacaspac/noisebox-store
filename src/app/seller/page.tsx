@@ -1,238 +1,482 @@
+"use client";
+
+import { useEffect, useState } from "react";
 import Link from "next/link";
-import { createClient } from "@supabase/supabase-js";
+import type { User } from "@supabase/supabase-js";
 
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!,
-);
+import { supabase } from "@/lib/supabase";
 
-type Order = {
+type Seller = {
   id: number;
-  status: string;
-  buyer_email: string | null;
-  created_at: string;
+  user_id: string;
+  shop_name: string;
+  shop_slug: string;
+  description: string | null;
 };
 
-type OrderItem = {
+type SellerListing = {
   id: number;
-  order_id: number;
-  listing_id: number;
-  seller_id: number;
-  artist: string | null;
-  title: string;
-  format: string | null;
-  quantity: number;
-  unit_price: number;
-  line_total: number;
-  fulfillment_status: string;
-
-  /*
-   * Supabase returns the joined orders relationship
-   * as an array for this query.
-   */
-  orders: Order[];
 };
 
-export default async function SellerOrdersPage() {
-  /*
-   * Temporary seller ID.
-   *
-   * Later this will come from the logged-in seller.
-   */
-  const sellerId = 1;
+export default function SellerPage() {
+  const [user, setUser] = useState<User | null>(null);
+  const [seller, setSeller] =
+    useState<Seller | null>(null);
 
-  const { data, error } = await supabaseAdmin
-    .from("order_items")
-    .select(`
-      id,
-      order_id,
-      listing_id,
-      seller_id,
-      artist,
-      title,
-      format,
-      quantity,
-      unit_price,
-      line_total,
-      fulfillment_status,
+  const [listingCount, setListingCount] =
+    useState(0);
 
-      orders!order_items_order_id_fkey (
-        id,
-        status,
-        buyer_email,
-        created_at
-      )
-    `)
-    .eq("seller_id", sellerId)
-    .neq("fulfillment_status", "shipped")
-    .order("id", { ascending: false });
+  const [loading, setLoading] =
+    useState(true);
 
-  if (error) {
-    console.error(
-      "Seller orders error:",
-      error,
-    );
+  useEffect(() => {
+    let mounted = true;
 
+    async function loadSeller() {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      if (!mounted) {
+        return;
+      }
+
+      setUser(user);
+
+      if (!user) {
+        setSeller(null);
+        setListingCount(0);
+        setLoading(false);
+        return;
+      }
+
+      const {
+        data: sellerData,
+        error: sellerError,
+      } = await supabase
+        .from("sellers")
+        .select(`
+          id,
+          user_id,
+          shop_name,
+          shop_slug,
+          description
+        `)
+        .eq("user_id", user.id)
+        .maybeSingle();
+
+      if (!mounted) {
+        return;
+      }
+
+      if (sellerError) {
+        console.error(
+          "Seller lookup error:",
+          sellerError,
+        );
+
+        setSeller(null);
+        setListingCount(0);
+        setLoading(false);
+        return;
+      }
+
+      if (!sellerData) {
+        setSeller(null);
+        setListingCount(0);
+        setLoading(false);
+        return;
+      }
+
+      const currentSeller =
+        sellerData as Seller;
+
+      setSeller(currentSeller);
+
+      const {
+        data: listings,
+        error: listingsError,
+      } = await supabase
+        .from("seller_listings")
+        .select("id")
+        .eq(
+          "seller_id",
+          currentSeller.id,
+        );
+
+      if (!mounted) {
+        return;
+      }
+
+      if (listingsError) {
+        console.error(
+          "Seller listings lookup error:",
+          listingsError,
+        );
+
+        setListingCount(0);
+      } else {
+        setListingCount(
+          (
+            (listings ??
+              []) as SellerListing[]
+          ).length,
+        );
+      }
+
+      setLoading(false);
+    }
+
+    loadSeller();
+
+    const {
+      data: { subscription },
+    } =
+      supabase.auth.onAuthStateChange(
+        () => {
+          loadSeller();
+        },
+      );
+
+    return () => {
+      mounted = false;
+      subscription.unsubscribe();
+    };
+  }, []);
+
+  if (loading) {
     return (
-      <main className="mx-auto max-w-6xl px-6 py-10">
-        <h1 className="text-3xl font-bold">
-          Orders
-        </h1>
-
-        <p className="mt-6 text-red-600">
-          Unable to load orders.
+      <main className="mx-auto max-w-6xl px-6 py-16">
+        <p className="text-gray-500">
+          Loading...
         </p>
       </main>
     );
   }
 
+  if (!user) {
+    return (
+      <main className="mx-auto max-w-6xl px-6 py-16">
+        <div className="max-w-2xl">
+          <p className="mb-3 text-sm font-semibold uppercase tracking-widest text-gray-500">
+            Sell on Noisebox
+          </p>
+
+          <h1 className="text-4xl font-bold tracking-tight">
+            Turn your collection into a
+            storefront.
+          </h1>
+
+          <p className="mt-5 text-lg leading-8 text-gray-600">
+            Sign in or create an account to
+            start selling records, CDs,
+            merchandise, and more on
+            Noisebox.
+          </p>
+
+          <Link
+            href="/register"
+            className="mt-8 inline-flex bg-black px-6 py-3 font-medium text-white transition hover:bg-gray-800"
+          >
+            Create Account
+          </Link>
+        </div>
+      </main>
+    );
+  }
+
   /*
-   * Supabase generates its own relationship type.
-   *
-   * We normalize that result to our OrderItem type.
-   * Casting through unknown avoids the TS2352 error
-   * produced by the Supabase relationship inference.
+   * Logged-in user who has never created
+   * a seller account.
    */
-  const orderItems =
-    (data ?? []) as unknown as OrderItem[];
+  if (!seller) {
+    return (
+      <main className="mx-auto max-w-6xl px-6 py-12">
+        <div className="mb-10">
+          <p className="text-sm text-gray-500">
+            Signed in as {user.email}
+          </p>
 
-  return (
-    <main className="mx-auto max-w-6xl px-6 py-10">
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold">
-          Orders
-        </h1>
+          <h1 className="mt-2 text-4xl font-bold tracking-tight">
+            Start Selling
+          </h1>
 
-        <p className="mt-2 text-gray-600">
-          Manage orders and track shipments.
-        </p>
-
-        <nav className="mt-7 flex gap-8 border-b border-gray-200">
-          <Link
-            href="/seller/orders"
-            className="border-b-2 border-black pb-3 text-sm font-semibold text-black"
-          >
-            Orders to Ship
-          </Link>
-
-          <Link
-            href="/seller/orders/history"
-            className="pb-3 text-sm font-medium text-gray-500 transition hover:text-black"
-          >
-            Order History
-          </Link>
-        </nav>
-      </div>
-
-      <h2 className="mb-5 text-xl font-semibold">
-        Orders to Ship
-      </h2>
-
-      {orderItems.length === 0 ? (
-        <div className="border border-gray-200 p-8">
-          <p className="text-gray-600">
-            You don&apos;t have any orders to ship.
+          <p className="mt-4 max-w-2xl text-lg leading-8 text-gray-600">
+            Create your Noisebox shop and
+            start selling records, CDs,
+            shirts, posters, and other music
+            merchandise.
           </p>
         </div>
-      ) : (
-        <div className="space-y-4">
-          {orderItems.map((item) => {
-            /*
-             * Supabase returns orders as an array.
-             * There should only be one related order,
-             * so use the first record.
-             */
-            const order =
-              item.orders?.[0] ?? null;
 
-            const orderDate =
-              order?.created_at
-                ? new Intl.DateTimeFormat(
-                    "en-US",
-                    {
-                      month: "short",
-                      day: "numeric",
-                      year: "numeric",
-                    },
-                  ).format(
-                    new Date(
-                      order.created_at,
-                    ),
-                  )
-                : "";
+        <div className="grid gap-6 md:grid-cols-2">
+          <section className="border border-gray-200 bg-white p-8">
+            <p className="text-sm font-semibold uppercase tracking-widest text-gray-500">
+              Selling
+            </p>
 
-            return (
-              <div
-                key={item.id}
-                className="border border-gray-200 bg-white p-6"
-              >
-                <div className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
-                  <div>
-                    <div className="mb-3 flex flex-wrap items-center gap-3">
-                      <span className="text-sm font-semibold uppercase tracking-wide text-gray-500">
-                        Order #{item.order_id}
-                      </span>
+            <h2 className="mt-3 text-2xl font-semibold">
+              Open your shop
+            </h2>
 
-                      {orderDate && (
-                        <span className="text-sm text-gray-500">
-                          {orderDate}
-                        </span>
-                      )}
-                    </div>
+            <p className="mt-3 leading-7 text-gray-600">
+              Set up your seller profile,
+              choose your shop name, and list
+              your first item.
+            </p>
 
-                    <h3 className="text-xl font-semibold">
-                      {item.artist
-                        ? `${item.artist} — ${item.title}`
-                        : item.title}
-                    </h3>
+            <Link
+              href="/seller/setup"
+              className="mt-6 inline-flex bg-black px-6 py-3 font-medium text-white transition hover:bg-gray-800"
+            >
+              Start Selling
+            </Link>
+          </section>
 
-                    <div className="mt-3 space-y-1 text-sm text-gray-600">
-                      {item.format && (
-                        <p>
-                          Format:{" "}
-                          {item.format}
-                        </p>
-                      )}
+          <section className="border border-gray-200 bg-white p-8">
+            <p className="text-sm font-semibold uppercase tracking-widest text-gray-500">
+              Buying
+            </p>
 
-                      <p>
-                        Quantity:{" "}
-                        {item.quantity}
-                      </p>
+            <h2 className="mt-3 text-2xl font-semibold">
+              Your Purchases
+            </h2>
 
-                      <p>
-                        Buyer:{" "}
-                        {order?.buyer_email ??
-                          "Not available"}
-                      </p>
+            <p className="mt-3 leading-7 text-gray-600">
+              View items you&apos;ve
+              purchased, shipping progress,
+              and your order history.
+            </p>
 
-                      <p>
-                        Status:{" "}
-                        {item.fulfillment_status}
-                      </p>
-                    </div>
-                  </div>
+            <div className="mt-6 inline-flex cursor-not-allowed border border-gray-300 px-6 py-3 font-medium text-gray-400">
+              Purchase History
 
-                  <div className="md:text-right">
-                    <p className="text-xl font-semibold">
-                      $
-                      {Number(
-                        item.line_total,
-                      ).toFixed(2)}
-                    </p>
-
-                    <Link
-                      href={`/seller/orders/${item.order_id}`}
-                      className="mt-4 inline-flex min-w-32 items-center justify-center border border-black px-5 py-2.5 text-sm font-medium text-black transition hover:bg-black hover:text-white"
-                    >
-                      View Order
-                    </Link>
-                  </div>
-                </div>
-              </div>
-            );
-          })}
+              <span className="ml-2 text-xs">
+                Coming Soon
+              </span>
+            </div>
+          </section>
         </div>
-      )}
+      </main>
+    );
+  }
+
+  /*
+   * Seller exists but has not listed
+   * anything yet.
+   */
+  if (listingCount === 0) {
+    return (
+      <main className="mx-auto max-w-6xl px-6 py-12">
+        <div className="max-w-3xl">
+          <p className="text-sm font-semibold uppercase tracking-widest text-gray-500">
+            {seller.shop_name}
+          </p>
+
+          <h1 className="mt-3 text-4xl font-bold tracking-tight">
+            Your shop is ready.
+          </h1>
+
+          <p className="mt-4 max-w-2xl text-lg leading-8 text-gray-600">
+            Add your first record, CD, or
+            piece of merchandise to start
+            selling on Noisebox.
+          </p>
+
+          <div className="mt-8 flex flex-wrap gap-3">
+            {/*
+             * Single-item workflow:
+             * Search the existing Noisebox
+             * release catalog first.
+             */}
+            <Link
+              href="/seller/products/new"
+              className="inline-flex bg-black px-6 py-3 font-medium text-white transition hover:bg-gray-800"
+            >
+              List Your First Item
+            </Link>
+
+            {/*
+             * Bulk Discogs CSV import stays
+             * available as a separate option.
+             */}
+            <Link
+              href="/seller/import"
+              className="inline-flex border border-gray-300 px-6 py-3 font-medium text-black transition hover:border-black"
+            >
+              Import Inventory
+            </Link>
+
+            <Link
+              href="/seller/setup"
+              className="inline-flex border border-gray-300 px-6 py-3 font-medium text-black transition hover:border-black"
+            >
+              Shop Settings
+            </Link>
+          </div>
+        </div>
+      </main>
+    );
+  }
+
+  /*
+   * Established seller dashboard.
+   */
+  return (
+    <main className="mx-auto max-w-6xl px-6 py-12">
+      <div className="mb-10">
+        <p className="text-sm font-semibold uppercase tracking-widest text-gray-500">
+          {seller.shop_name}
+        </p>
+
+        <h1 className="mt-2 text-4xl font-bold tracking-tight">
+          Seller Dashboard
+        </h1>
+
+        <p className="mt-3 text-gray-600">
+          Manage your shop, listings,
+          orders, and selling activity.
+        </p>
+      </div>
+
+      <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+        {/* LIST SINGLE ITEM */}
+        <Link
+          href="/seller/products/new"
+          className="border border-gray-200 bg-white p-6 transition hover:border-black"
+        >
+          <p className="text-sm font-semibold uppercase tracking-wide text-gray-500">
+            Sell
+          </p>
+
+          <h2 className="mt-2 text-xl font-semibold">
+            List an Item
+          </h2>
+
+          <p className="mt-2 text-sm leading-6 text-gray-600">
+            Search for a release or create a
+            new listing.
+          </p>
+        </Link>
+
+        {/* INVENTORY */}
+        <Link
+          href="/seller/listings"
+          className="border border-gray-200 bg-white p-6 transition hover:border-black"
+        >
+          <p className="text-sm font-semibold uppercase tracking-wide text-gray-500">
+            Inventory
+          </p>
+
+          <h2 className="mt-2 text-xl font-semibold">
+            Listings
+          </h2>
+
+          <p className="mt-2 text-sm leading-6 text-gray-600">
+            Manage your {listingCount} active{" "}
+            {listingCount === 1
+              ? "listing"
+              : "listings"}
+            .
+          </p>
+        </Link>
+
+        {/* BULK IMPORT */}
+        <Link
+          href="/seller/import"
+          className="border border-gray-200 bg-white p-6 transition hover:border-black"
+        >
+          <p className="text-sm font-semibold uppercase tracking-wide text-gray-500">
+            Import
+          </p>
+
+          <h2 className="mt-2 text-xl font-semibold">
+            Import Inventory
+          </h2>
+
+          <p className="mt-2 text-sm leading-6 text-gray-600">
+            Add multiple listings from your
+            Discogs inventory CSV.
+          </p>
+        </Link>
+
+        {/* ORDERS TO SHIP */}
+        <Link
+          href="/seller/orders"
+          className="border border-gray-200 bg-white p-6 transition hover:border-black"
+        >
+          <p className="text-sm font-semibold uppercase tracking-wide text-gray-500">
+            Fulfillment
+          </p>
+
+          <h2 className="mt-2 text-xl font-semibold">
+            Orders to Ship
+          </h2>
+
+          <p className="mt-2 text-sm leading-6 text-gray-600">
+            View paid orders that need to be
+            packaged and shipped.
+          </p>
+        </Link>
+
+        {/* ORDER HISTORY */}
+        <Link
+          href="/seller/orders/history"
+          className="border border-gray-200 bg-white p-6 transition hover:border-black"
+        >
+          <p className="text-sm font-semibold uppercase tracking-wide text-gray-500">
+            Sales
+          </p>
+
+          <h2 className="mt-2 text-xl font-semibold">
+            Order History
+          </h2>
+
+          <p className="mt-2 text-sm leading-6 text-gray-600">
+            Review previously shipped and
+            completed orders.
+          </p>
+        </Link>
+
+        {/* FEEDBACK */}
+        <div className="cursor-not-allowed border border-gray-200 bg-gray-50 p-6 opacity-60">
+          <p className="text-sm font-semibold uppercase tracking-wide text-gray-400">
+            Reputation
+          </p>
+
+          <h2 className="mt-2 text-xl font-semibold text-gray-500">
+            Feedback
+          </h2>
+
+          <p className="mt-2 text-sm leading-6 text-gray-400">
+            Buyer ratings and seller
+            feedback.
+          </p>
+
+          <p className="mt-4 text-xs font-semibold uppercase tracking-wider text-gray-400">
+            Coming Soon
+          </p>
+        </div>
+
+        {/* SETTINGS */}
+        <Link
+          href="/seller/setup"
+          className="border border-gray-200 bg-white p-6 transition hover:border-black"
+        >
+          <p className="text-sm font-semibold uppercase tracking-wide text-gray-500">
+            Account
+          </p>
+
+          <h2 className="mt-2 text-xl font-semibold">
+            Shop Settings
+          </h2>
+
+          <p className="mt-2 text-sm leading-6 text-gray-600">
+            Update your shop information and
+            seller settings.
+          </p>
+        </Link>
+      </div>
     </main>
   );
 }

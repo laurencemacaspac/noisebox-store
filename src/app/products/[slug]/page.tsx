@@ -9,6 +9,15 @@ type ProductPageProps = {
   }>;
 };
 
+type ReleaseTrack = {
+  id: number;
+  release_id: number;
+  position: string | null;
+  title: string;
+  duration: string | null;
+  sort_order: number | null;
+};
+
 export default async function ProductPage({
   params,
 }: ProductPageProps) {
@@ -21,68 +30,67 @@ export default async function ProductPage({
   }
 
   /*
-   * Marketplace listing
-   *
-   * seller_listings
-   *   ├── releases
-   *   │     └── release_images
-   *   │
-   *   └── sellers
+   * Load marketplace listing.
    */
-  const { data: listing, error } = await supabase
-    .from("seller_listings")
-    .select(
-      `
-        id,
-        seller_id,
-        release_id,
-        price,
-        quantity,
-        media_condition,
-        sleeve_condition,
-        seller_note,
-        status,
-        accept_offer,
-
-        seller:sellers!seller_listings_seller_id_fkey (
+  const { data: listing, error: listingError } =
+    await supabase
+      .from("seller_listings")
+      .select(
+        `
           id,
-          shop_name,
-          shop_slug,
-          description
-        ),
+          seller_id,
+          release_id,
+          price,
+          quantity,
+          media_condition,
+          sleeve_condition,
+          seller_note,
+          status,
+          accept_offer,
 
-        release:releases!seller_listings_release_id_fkey (
-          id,
-          artist,
-          title,
-          format,
-          format_quantity,
-          label,
-          catalog_number,
-          source,
-          source_release_id,
-
-          release_images (
+          seller:sellers!seller_listings_seller_id_fkey (
             id,
-            image_url,
-            image_source,
-            image_type,
-            is_primary,
-            sort_order
-          )
-        )
-      `,
-    )
-    .eq("id", listingId)
-    .single();
+            shop_name,
+            shop_slug,
+            description
+          ),
 
-  if (error || !listing) {
-    console.error("Product listing error:", error);
+          release:releases!seller_listings_release_id_fkey (
+            id,
+            artist,
+            title,
+            format,
+            format_quantity,
+            label,
+            catalog_number,
+            source,
+            source_release_id,
+
+            release_images (
+              id,
+              image_url,
+              image_source,
+              image_type,
+              is_primary,
+              sort_order
+            )
+          )
+        `,
+      )
+      .eq("id", listingId)
+      .single();
+
+  if (listingError || !listing) {
+    console.error(
+      "Product listing error:",
+      listingError,
+    );
+
     notFound();
   }
 
   /*
-   * Safely normalize Supabase relationship shapes.
+   * Normalize Supabase relationship shapes.
    */
   const release = Array.isArray(listing.release)
     ? listing.release[0]
@@ -96,6 +104,37 @@ export default async function ProductPage({
     notFound();
   }
 
+  /*
+   * Load tracklist.
+   */
+  const { data: trackData, error: trackError } =
+    await supabase
+      .from("release_tracks")
+      .select(
+        `
+          id,
+          release_id,
+          position,
+          title,
+          duration,
+          sort_order
+        `,
+      )
+      .eq("release_id", release.id)
+      .order("sort_order", {
+        ascending: true,
+      });
+
+  if (trackError) {
+    console.error(
+      "Product tracklist error:",
+      trackError,
+    );
+  }
+
+  const releaseTracks =
+    (trackData ?? []) as ReleaseTrack[];
+
   const productName = release.artist
     ? `${release.artist} - ${release.title}`
     : release.title;
@@ -107,7 +146,8 @@ export default async function ProductPage({
     ...(release.release_images ?? []),
   ].sort(
     (a, b) =>
-      (a.sort_order ?? 0) - (b.sort_order ?? 0),
+      (a.sort_order ?? 0) -
+      (b.sort_order ?? 0),
   );
 
   /*
@@ -119,15 +159,19 @@ export default async function ProductPage({
    * 3. First available image
    */
   const primaryImage =
-    releaseImages.find((image) => image.is_primary) ??
     releaseImages.find(
-      (image) => image.image_type === "front",
+      (image) => image.is_primary,
+    ) ??
+    releaseImages.find(
+      (image) =>
+        image.image_type === "front",
     ) ??
     releaseImages[0] ??
     null;
 
   return (
     <main className="min-h-screen bg-white text-black">
+      {/* Product */}
       <div className="mx-auto max-w-6xl px-6 py-16">
         <div className="grid gap-12 md:grid-cols-2">
           {/* Product Gallery */}
@@ -281,6 +325,79 @@ export default async function ProductPage({
           </div>
         </div>
       </div>
+
+      {/* Wider Tracklist */}
+      {releaseTracks.length > 0 && (
+        <section className="border-t border-gray-200 pb-20 pt-12">
+          <div className="mx-auto max-w-7xl px-6">
+            <p className="text-sm uppercase tracking-[0.25em] text-gray-500">
+              Release
+            </p>
+
+            <h2 className="mt-2 text-3xl font-bold">
+              Tracklist
+            </h2>
+
+            <div className="mt-8 divide-y divide-gray-200 border-y border-gray-200">
+              {releaseTracks.map((track) => {
+                /*
+                 * YouTube search:
+                 * Artist + Track Title
+                 */
+                const searchQuery = [
+                  release.artist,
+                  track.title,
+                ]
+                  .filter(Boolean)
+                  .join(" ");
+
+                const youtubeUrl =
+                  `https://www.youtube.com/results?search_query=${encodeURIComponent(
+                    searchQuery,
+                  )}`;
+
+                return (
+                  <div
+                    key={track.id}
+                    className="grid grid-cols-[70px_minmax(0,1fr)_70px_100px] items-center gap-6 py-4"
+                  >
+                    {/* Position */}
+                    <div className="text-sm font-medium text-gray-500">
+                      {track.position || "—"}
+                    </div>
+
+                    {/* Track Title */}
+                    <div className="min-w-0 font-medium">
+                      {track.title}
+                    </div>
+
+                    {/* Duration */}
+                    <div className="text-right text-sm tabular-nums text-gray-500">
+                      {track.duration || ""}
+                    </div>
+
+                    {/* YouTube */}
+                    <div className="text-right">
+                      <a
+                        href={youtubeUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-2 whitespace-nowrap text-sm font-medium transition-opacity hover:opacity-60"
+                        aria-label={`Listen to ${track.title} on YouTube`}
+                      >
+                        <span aria-hidden="true">
+                          ▶
+                        </span>
+                        <span>Listen</span>
+                      </a>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </section>
+      )}
     </main>
   );
 }

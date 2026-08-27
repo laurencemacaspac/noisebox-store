@@ -151,6 +151,88 @@ export async function POST(
      */
     const body = await request.json();
 
+    /*
+     * Identify the authenticated buyer from the
+     * Supabase access token sent by the checkout
+     * page.
+     *
+     * IMPORTANT:
+     * We never accept buyer_id from browser JSON.
+     * The UUID is derived only from a token that
+     * Supabase successfully verifies.
+     *
+     * Guest checkout remains supported when there
+     * is no Authorization header.
+     */
+    const authorizationHeader =
+      request.headers.get("authorization");
+
+    let buyerId: string | null = null;
+
+    if (authorizationHeader) {
+      const bearerPrefix = "Bearer ";
+
+      if (
+        !authorizationHeader.startsWith(
+          bearerPrefix,
+        )
+      ) {
+        return NextResponse.json(
+          {
+            error:
+              "Invalid authorization header.",
+          },
+          {
+            status: 401,
+          },
+        );
+      }
+
+      const accessToken =
+        authorizationHeader
+          .slice(bearerPrefix.length)
+          .trim();
+
+      if (!accessToken) {
+        return NextResponse.json(
+          {
+            error:
+              "Invalid authentication token.",
+          },
+          {
+            status: 401,
+          },
+        );
+      }
+
+      const {
+        data: authData,
+        error: authError,
+      } =
+        await supabaseAdmin.auth.getUser(
+          accessToken,
+        );
+
+      if (authError || !authData.user) {
+        console.error(
+          "Checkout authentication error:",
+          authError,
+        );
+
+        return NextResponse.json(
+          {
+            error:
+              "Your sign-in session is no longer valid. Please sign in again.",
+          },
+          {
+            status: 401,
+          },
+        );
+      }
+
+      buyerId = authData.user.id;
+    }
+
     const cartItems =
       body.cartItems as CartItem[];
 
@@ -903,6 +985,17 @@ export async function POST(
         total,
 
         currency: "usd",
+
+        /*
+         * Account ownership for Purchase History.
+         *
+         * Logged-in checkout:
+         * buyer_id = verified Supabase Auth UUID
+         *
+         * Guest checkout:
+         * buyer_id = null
+         */
+        buyer_id: buyerId,
 
         /*
          * Save the buyer and shipping address on the
