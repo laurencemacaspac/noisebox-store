@@ -15,7 +15,10 @@ export default function Header() {
   const [user, setUser] = useState<User | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
 
-  const cartCount = cartItems.reduce((total, item) => total + item.quantity, 0);
+  const cartCount = cartItems.reduce(
+    (total, item) => total + item.quantity,
+    0,
+  );
 
   useEffect(() => {
     async function loadUser() {
@@ -31,10 +34,12 @@ export default function Header() {
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null);
-      setAuthLoading(false);
-    });
+    } = supabase.auth.onAuthStateChange(
+      (_event, session) => {
+        setUser(session?.user ?? null);
+        setAuthLoading(false);
+      },
+    );
 
     return () => {
       subscription.unsubscribe();
@@ -52,61 +57,85 @@ export default function Header() {
   return (
     <>
       <header className="border-b border-gray-200">
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-5">
-          <Link href="/" className="text-xl font-bold tracking-tight">
-            NOISEBOX
-          </Link>
-
-          <nav className="flex items-center gap-6 text-sm">
-            <Link href="/#shop" className="hover:text-gray-500">
-              Shop
-            </Link>
-
-            <Link href="/#about" className="hover:text-gray-500">
-              About
-            </Link>
-
-            {!authLoading && !user && (
-              <button
-                type="button"
-                onClick={() => setAuthOpen(true)}
-                className="hover:text-gray-500"
+        <div className="mx-auto max-w-6xl px-6">
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between">
+            {/* Logo */}
+            <div className="flex w-full items-center justify-center py-5 md:w-auto md:justify-start">
+              <Link
+                href="/"
+                className="text-xl font-bold tracking-tight"
               >
-                Sign In
-              </button>
-            )}
+                NOISEBOX
+              </Link>
+            </div>
 
-            {!authLoading && user && (
-              <>
-                <Link href="/account" className="hover:text-gray-500">
-                  Account
-                </Link>
+            {/* Navigation */}
+            <nav className="flex w-full items-center justify-center gap-5 border-t border-gray-100 py-4 text-sm md:w-auto md:gap-6 md:border-t-0 md:py-5">
+              <Link
+                href="/#shop"
+                className="whitespace-nowrap hover:text-gray-500"
+              >
+                Shop
+              </Link>
 
-                <span
-                  className="hidden max-w-40 truncate text-gray-500 md:inline"
-                  title={user.email}
-                >
-                  {user.email}
-                </span>
+              <Link
+                href="/#about"
+                className="whitespace-nowrap hover:text-gray-500"
+              >
+                About
+              </Link>
 
+              {!authLoading && !user && (
                 <button
                   type="button"
-                  onClick={handleSignOut}
-                  className="hover:text-gray-500"
+                  onClick={() => setAuthOpen(true)}
+                  className="whitespace-nowrap hover:text-gray-500"
                 >
-                  Sign Out
+                  Sign In
                 </button>
-              </>
-            )}
+              )}
 
-            <Link href="/cart" className="hover:text-gray-500">
-              Cart ({cartCount})
-            </Link>
-          </nav>
+              {!authLoading && user && (
+                <>
+                  <Link
+                    href="/account"
+                    className="whitespace-nowrap hover:text-gray-500"
+                  >
+                    Account
+                  </Link>
+
+                  <span
+                    className="hidden max-w-40 truncate text-gray-500 md:inline"
+                    title={user.email}
+                  >
+                    {user.email}
+                  </span>
+
+                  <button
+                    type="button"
+                    onClick={handleSignOut}
+                    className="whitespace-nowrap hover:text-gray-500"
+                  >
+                    Sign Out
+                  </button>
+                </>
+              )}
+
+              <Link
+                href="/cart"
+                className="whitespace-nowrap hover:text-gray-500"
+              >
+                Cart ({cartCount})
+              </Link>
+            </nav>
+          </div>
         </div>
       </header>
 
-      <AuthModal isOpen={authOpen} onClose={() => setAuthOpen(false)} />
+      <AuthModal
+        isOpen={authOpen}
+        onClose={() => setAuthOpen(false)}
+      />
     </>
   );
 }
