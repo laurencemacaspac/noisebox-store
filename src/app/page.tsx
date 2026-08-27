@@ -1,6 +1,8 @@
 import ProductGrid from "@/components/ProductGrid";
 import { supabase } from "@/lib/supabase";
 
+export const dynamic = "force-dynamic";
+
 export default async function Home() {
   const { data: listings, error } = await supabase
     .from("seller_listings")
