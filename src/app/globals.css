@@ -58,3 +58,15 @@ body {
   .nb-hero-actions{margin-top:14px}
   .nb-hero-dots{bottom:8px}
 }
+
+/* Smooth scrolling for same-page anchor links (e.g. #shop and #about). */
+html {
+  scroll-behavior: smooth;
+}
+
+/* Respect the visitor's accessibility preference. */
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+}
