@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import type { CSSProperties } from "react";
 
 const slides = [
   { eyebrow: "FOR DJS", line1: "Fuel your", line2: "next set.", description: "Find vinyl, CDs, and rare gems from independent sellers around the world.", image: "/hero/slide-1.webp" },
@@ -11,14 +12,33 @@ const slides = [
 
 export default function HeroSlideshow() {
   const [active, setActive] = useState(0);
+  const [headerHeight, setHeaderHeight] = useState(0);
+
   useEffect(() => {
     const timer = window.setInterval(() => setActive((current) => (current + 1) % slides.length), 6500);
     return () => window.clearInterval(timer);
   }, []);
+
+  useEffect(() => {
+    const header = document.querySelector<HTMLElement>(".nb-header");
+    if (!header) return;
+
+    const measure = () => setHeaderHeight(header.getBoundingClientRect().height);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(header);
+    window.addEventListener("resize", measure);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", measure);
+    };
+  }, []);
+
   const go = (direction: number) => setActive((current) => (current + direction + slides.length) % slides.length);
+  const heroStyle = { "--nb-header-height": `${headerHeight}px` } as CSSProperties;
 
   return (
-    <section className="nb-hero" aria-label="Discover music at Noisebox" aria-roledescription="carousel">
+    <section className="nb-hero" style={heroStyle} aria-label="Discover music at Noisebox" aria-roledescription="carousel">
       {slides.map((slide, index) => (
         <div key={slide.eyebrow} className={`nb-hero-panel ${index === active ? "is-active" : ""}`} aria-hidden={index !== active} style={{ backgroundImage: `url('${slide.image}')` }}>
           <div className="nb-hero-inner">
